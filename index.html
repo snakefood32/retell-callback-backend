@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retell AI Instant Callback</title>
+  <!-- FontAwesome icons for styling -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #6ac4e0 0%, #8152a6 100%);
+      font-family: 'Segoe UI', sans-serif;
+    }
+    .container {
+      background: #fff;
+      padding: 40px;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      width: 100%;
+      max-width: 480px;
+    }
+    h1 {
+      margin: 0 0 20px;
+      font-size: 28px;
+      color: #333;
+    }
+    p {
+      margin: 0 0 20px;
+      color: #666;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      color: #333;
+    }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      background: #8152a6;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:disabled {
+      background: #bba3ce;
+    }
+    button:hover:enabled {
+      background: #704491;
+    }
+    .success, .error {
+      display: none;
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: -10px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    .success {
+      background: #e6f8ea;
+      color: #2e865f;
+    }
+    .error {
+      background: #fde6e6;
+      color: #c13b3b;
+    }
+    .system-info {
+      margin-top: 15px;
+      font-size: 12px;
+      color: #555;
+      word-break: break-all;
+    }
+    .system-info b {
+      display: inline-block;
+      min-width: 60px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1><i class="fa-solid fa-phone"></i> Instant Callback</h1>
+    <p>Enter your details and we'll call you in seconds using Retell AI.</p>
+
+    <form id="callbackForm">
+      <label for="name">Your Name</label>
+      <input type="text" id="name" name="name" placeholder="John Doe">
+
+      <label for="phone">Phone Number</label>
+      <input type="tel" id="phone" name="phone" placeholder="+1234567890">
+
+      <label for="case_type">Case Type</label>
+      <select id="case_type" name="case_type">
+        <option value="Mass Tort">Mass Tort</option>
+        <option value="Roundup">Roundup</option>
+        <option value="Hernia Mesh">Hernia Mesh</option>
+        <option value="Camp Lejeune">Camp Lejeune</option>
+        <option value="Other">Other</option>
+      </select>
+
+      <button type="submit" id="submitBtn"><i class="fa-solid fa-phone"></i> Get Instant Call</button>
+
+      <div id="successMsg" class="success"></div>
+      <div id="errorMsg" class="error"></div>
+    </form>
+
+    <div class="system-info">
+      <div><b>Agent:</b> agent_942e5a52722eb61774d4ec367d</div>
+      <div><b>From:</b> +15072676898</div>
+      <div><b>Backend:</b> <span id="backendUrl">/lead-capture</span></div>
+    </div>
+  </div>
+
+  <script>
+    // Endpoint for the callback API. Change this to the full URL when hosted remotely.
+    const API_URL = '/lead-capture';
+
+    const form       = document.getElementById('callbackForm');
+    const submitBtn  = document.getElementById('submitBtn');
+    const successMsg = document.getElementById('successMsg');
+    const errorMsg   = document.getElementById('errorMsg');
+    const backendUrl = document.getElementById('backendUrl');
+
+    // Reflect the API endpoint in the system info if it's a full URL
+    if (API_URL.startsWith('http')) {
+      backendUrl.textContent = API_URL;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      successMsg.style.display = 'none';
+      errorMsg.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-phone"></i> Calling…';
+
+      const payload = {
+        name:       document.getElementById('name').value,
+        phone:      document.getElementById('phone').value,
+        case_type:  document.getElementById('case_type').value,
+        landing_page: window.location.href,
+        utm_source:   new URLSearchParams(window.location.search).get('utm_source'),
+        utm_campaign: new URLSearchParams(window.location.search).get('utm_campaign'),
+      };
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (response.ok) {
+          successMsg.textContent = data.message || 'We’re calling you now!';
+          successMsg.style.display = 'block';
+          form.reset();
+        } else {
+          throw new Error(data.error || 'An error occurred');
+        }
+      } catch (err) {
+        errorMsg.textContent = err.message || 'Failed to initiate call';
+        errorMsg.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-phone"></i> Get Instant Call';
+      }
+    });
+  </script>
+</body>
+</html>
