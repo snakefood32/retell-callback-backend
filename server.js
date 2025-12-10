@@ -1,91 +1,104 @@
 import express from 'express';
-import axios from 'axios';
 import cors from 'cors';
+import axios from 'axios';
 import dotenv from 'dotenv';
 
-// Load environment variables from .env file
+// Load environment variables from .env if present
 dotenv.config();
 
+// Retrieve credentials from environment variables or fallback to hard‑coded values.
+// In production, you should prefer environment variables to avoid exposing
+// secrets in your source code. The values below serve as sensible defaults
+// based on the credentials provided by the user for local testing.
+const RETELL_API_KEY  = process.env.RETELL_API_KEY  || 'key_493977fa5d53a9f3989740ae8ac0';
+const RETELL_AGENT_ID = process.env.RETELL_AGENT_ID || 'agent_942e5a52722eb61774d4ec367d';
+const RETELL_FROM_NUM = process.env.RETELL_FROM_NUM || '+15072676898';
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Enable CORS for all routes
+// Middleware to parse JSON and enable CORS
 app.use(cors());
-
-// Parse incoming JSON payloads
 app.use(express.json());
 
-/*
- * Retell AI instant callback handler
+/**
+ * Helper function to convert a phone number to E.164 format.
+ * It strips all non‑digit characters, prefixes with country code if necessary,
+ * and returns the number with a leading '+'.
  *
- * This server exposes a single POST endpoint, `/lead-capture`, which accepts a
- * phone number from a landing page, then calls the Retell AI API to initiate
- * an outbound phone call from your configured Retell number to the provided
- * destination number. The Retell agent ID and phone number are hard‑coded
- * below for simplicity; update these constants as needed. The API key is
- * provided via environment variables (see .env). If the call is successfully
- * registered, the endpoint responds with the Retell API response. On error,
- * a 500 status and error details are returned.
+ * @param {string} phone Raw phone number from client
+ * @returns {string} Phone number formatted as E.164
  */
-
-// Constants: update these with your own Retell details
-const AGENT_ID = 'agent_942e5a52722eb61774d4ec367d';
-const FROM_NUMBER = '+15072676898';
-
-// Base URL for Retell AI API
-const RETELL_BASE_URL = 'https://api.retellai.com';
+function formatToE164(phone) {
+  let digits = (phone || '').replace(/\D/g, '');
+  // Prepend US country code if missing
+  if (!digits.startsWith('1') && digits.length === 10) {
+    digits = '1' + digits;
+  }
+  return '+' + digits;
+}
 
 /**
  * POST /lead-capture
- * Expected body parameters (JSON or form‑encoded):
- *   - phone or phoneNumber: destination number in E.164 format (e.g. +15551234567)
- *
- * The endpoint attempts to initiate an outbound call using Retell AI. It
- * validates the input, then sends a POST request to `/v2/create-phone-call` on
- * the Retell API. The API key is sent in the Authorization header. If the
- * request succeeds, the response body from Retell is returned. Otherwise,
- * errors are logged and a descriptive message is sent to the client.
+ * Expects body: { phone, name, case_type, landing_page, utm_source, utm_campaign }
+ * Initiates an outbound call using the Retell AI API and returns a success
+ * message to the client. On error, returns an error message.
  */
 app.post('/lead-capture', async (req, res) => {
-  try {
-    // Accept phone number from various common field names
-    const phoneNumber = req.body.phone || req.body.phoneNumber || req.query.phone || req.query.phoneNumber;
-    if (!phoneNumber) {
-      return res.status(400).json({ error: 'Phone number is required' });
-    }
+  const { phone, name, case_type, landing_page, utm_source, utm_campaign } = req.body || {};
 
-    // Prepare payload for Retell API
+  if (!phone) {
+    return res.status(400).json({ status: 'error', error: 'Phone number is required' });
+  }
+
+  const toNumber = formatToE164(phone);
+
+  try {
+    // Compose request payload for Retell API
     const payload = {
-      from_number: FROM_NUMBER,
-      to_number: phoneNumber,
-      agent_id: AGENT_ID,
+      from_number: RETELL_FROM_NUM,
+      to_number: toNumber,
+      override_agent_id: RETELL_AGENT_ID,
+      // Optional metadata fields for analytics or customization
+      metadata: {
+        landing_page: landing_page || null,
+        case_type:    case_type    || null,
+        utm_source:   utm_source   || null,
+        utm_campaign: utm_campaign || null,
+      },
+      // Dynamic variables to personalize the AI agent's script
+      retell_llm_dynamic_variables: {
+        lead_name:      name      || '',
+        lead_phone:     phone,
+        lead_case_type: case_type || 'mass tort',
+        lead_source:    landing_page || utm_source || 'website',
+        utm_campaign:   utm_campaign || '',
+      },
     };
 
-    // Send request to Retell API
-    const response = await axios.post(`${RETELL_BASE_URL}/v2/create-phone-call`, payload, {
-      headers: {
-        'Authorization': `Bearer ${process.env.RETELL_API_KEY}`,
-        'Content-Type': 'application/json',
+    await axios.post(
+      'https://api.retellai.com/v2/create-phone-call',
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${RETELL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
       },
-    });
+    );
 
-    // Return the Retell API response to the client
-    return res.json({ success: true, data: response.data });
+    return res.status(200).json({ status: 'success', message: "We're calling you now! Please pick up." });
   } catch (error) {
-    // Capture error information for troubleshooting
-    const status = error.response?.status || 500;
-    const details = error.response?.data || { message: error.message };
-    console.error('Retell API error:', details);
-    return res.status(status).json({ error: 'Failed to create phone call', details });
+    console.error('Error initiating Retell call:', error?.response?.data || error?.message);
+    return res.status(500).json({ status: 'error', error: 'Failed to initiate call' });
   }
 });
 
-// Health check route to verify server is running
-app.get('/', (req, res) => {
-  res.send('Retell callback server is running');
+// Basic health check endpoint
+app.get('/', (_, res) => {
+  res.json({ status: 'ok', message: 'Retell callback backend is running' });
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Server listening on http://localhost:${PORT}`);
 });
